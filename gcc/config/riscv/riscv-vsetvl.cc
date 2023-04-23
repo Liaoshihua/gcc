@@ -3529,15 +3529,34 @@ void pass_vsetvl::pre_vsetvl(void) {
     commit_edge_insertions();
 }
 
-void pass_vsetvl::cleanup_insns(void) const {
-  for (const bb_info *bb : crtl->ssa->bbs()) {
-    for (insn_info *insn : bb->real_nondebug_insns()) {
-      rtx_insn *rinsn = insn->rtl();
-      const auto &dem = m_vector_manager->vector_insn_infos[insn->uid()];
-      /* Eliminate local vsetvl:
-           bb 0:
-           vsetvl a5,a6,...
-           vsetvl zero,a5.
+/* Before VSETVL PASS, RVV instructions pattern is depending on AVL operand
+   implicitly. Since we will emit VSETVL instruction and make RVV instructions
+   depending on VL/VTYPE global status registers, we remove the such AVL operand
+   in the RVV instructions pattern here in order to remove AVL dependencies when
+   AVL operand is a register operand.
+
+   Before the VSETVL PASS:
+     li a5,32
+     ...
+     vadd.vv (..., a5)
+   After the VSETVL PASS:
+     li a5,32
+     vsetvli zero, a5, ...
+     ...
+     vadd.vv (..., const_int 0).  */
+void
+pass_vsetvl::cleanup_insns (void) const
+{
+  for (const bb_info *bb : crtl->ssa->bbs ())
+    {
+      for (insn_info *insn : bb->real_nondebug_insns ())
+	{
+	  rtx_insn *rinsn = insn->rtl ();
+	  const auto &dem = m_vector_manager->vector_insn_infos[insn->uid ()];
+	  /* Eliminate local vsetvl:
+	       bb 0:
+	       vsetvl a5,a6,...
+	       vsetvl zero,a5.
 
          Eliminate vsetvl in bb2 when a5 is only coming from
          bb 0.  */
