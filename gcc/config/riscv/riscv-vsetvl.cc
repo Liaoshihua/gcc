@@ -920,6 +920,24 @@ static void change_vsetvl_insn(const insn_info *insn,
 }
 
 static bool
+avl_source_has_vsetvl_p (set_info *avl_source)
+{
+  if (!avl_source)
+    return false;
+  if (!avl_source->insn ())
+    return false;
+  if (avl_source->insn ()->is_real ())
+    return vsetvl_insn_p (avl_source->insn ()->rtl ());
+  hash_set<set_info *> sets = get_all_sets (avl_source, true, false, true);
+  for (const auto set : sets)
+    {
+      if (set->insn ()->is_real () && vsetvl_insn_p (set->insn ()->rtl ()))
+	return true;
+    }
+  return false;
+}
+
+static bool
 source_equal_p (insn_info *insn1, insn_info *insn2)
 {
   if (!insn1 || !insn2)
@@ -952,17 +970,24 @@ source_equal_p (insn_info *insn1, insn_info *insn2)
        We consider AVL of RVV 1 and RVV 2 are same so that we can
        gain more optimization opportunities.
 
-       Note: insn1_info.compatible_avl_p (insn2_info)
-       will make sure there is no instruction between vsetvl1 and vsetvl2
-       modify a5 since their def will be different if there is instruction
-       modify a5 and compatible_avl_p will return false.  */
-    vector_insn_info insn1_info, insn2_info;
-    insn1_info.parse_insn(insn1);
-    insn2_info.parse_insn(insn2);
-    if (insn1_info.same_vlmax_p(insn2_info) &&
-        insn1_info.compatible_avl_p(insn2_info))
-      return true;
-  }
+	 Note: insn1_info.compatible_avl_p (insn2_info)
+	 will make sure there is no instruction between vsetvl1 and vsetvl2
+	 modify a5 since their def will be different if there is instruction
+	 modify a5 and compatible_avl_p will return false.  */
+      vector_insn_info insn1_info, insn2_info;
+      insn1_info.parse_insn (insn1);
+      insn2_info.parse_insn (insn2);
+
+      /* To avoid dead loop, we don't optimize a vsetvli def has vsetvli
+	 instructions which will complicate the situation.  */
+      if (avl_source_has_vsetvl_p (insn1_info.get_avl_source ())
+	  || avl_source_has_vsetvl_p (insn2_info.get_avl_source ()))
+	return false;
+
+      if (insn1_info.same_vlmax_p (insn2_info)
+	  && insn1_info.compatible_avl_p (insn2_info))
+	return true;
+    }
 
   /* We only handle AVL is set by instructions with no side effects.  */
   if (!single_set1 || !single_set2)
