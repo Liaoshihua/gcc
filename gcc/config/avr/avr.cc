@@ -1300,8 +1300,7 @@ avr_lookup_function_attribute1 (const_tree func, const char *name)
       func = TREE_TYPE (func);
     }
 
-  gcc_assert (TREE_CODE (func) == FUNCTION_TYPE
-              || TREE_CODE (func) == METHOD_TYPE);
+  gcc_assert (FUNC_OR_METHOD_TYPE_P (func));
 
   return NULL_TREE != lookup_attribute (name, TYPE_ATTRIBUTES (func));
 }
@@ -10429,7 +10428,7 @@ avr_progmem_p (tree decl, tree attributes)
 static bool
 avr_decl_absdata_p (tree decl, tree attributes)
 {
-  return (TREE_CODE (decl) == VAR_DECL
+  return (VAR_P (decl)
           && NULL_TREE != lookup_attribute ("absdata", attributes));
 }
 
@@ -10566,7 +10565,7 @@ avr_insert_attributes (tree node, tree *attributes)
 
   /* Add the section attribute if the variable is in progmem.  */
 
-  if (TREE_CODE (node) == VAR_DECL
+  if (VAR_P (node)
       && (TREE_STATIC (node) || DECL_EXTERNAL (node))
       && avr_progmem_p (node, *attributes))
     {
@@ -10780,7 +10779,7 @@ avr_section_type_flags (tree decl, const char *name, int reloc)
 
   if (startswith (name, ".noinit"))
     {
-      if (decl && TREE_CODE (decl) == VAR_DECL
+      if (decl && VAR_P (decl)
 	  && DECL_INITIAL (decl) == NULL_TREE)
 	flags |= SECTION_BSS;  /* @nobits */
       else
@@ -10928,7 +10927,7 @@ avr_encode_section_info (tree decl, rtx rtl, int new_decl_p)
 
   if (AVR_TINY
       && decl
-      && VAR_DECL == TREE_CODE (decl)
+      && VAR_P (decl)
       && MEM_P (rtl)
       && SYMBOL_REF_P (XEXP (rtl, 0)))
     {
