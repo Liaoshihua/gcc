@@ -94,21 +94,6 @@ along with GCC; see the file COPYING3.  If not see
    says that the function extends the C-level BUILT_IN_<NAME>{,L,LL,IMAX}
    group of functions to any integral mode (including vector modes).
 
-   DEF_INTERNAL_WIDENING_OPTAB_FN is a wrapper that defines five internal
-   functions with DEF_INTERNAL_SIGNED_OPTAB_FN:
-   - one that describes a widening operation with the same number of elements
-   in the output and input vectors,
-   - two that describe a pair of high-low widening operations where the output
-   vectors each have half the number of elements of the input vectors,
-   corresponding to the result of the widening operation on the top half and
-   bottom half, these have the suffixes _HI and _LO,
-   - and two that describe a pair of even-odd widening operations where the
-   output vectors each have half the number of elements of the input vectors,
-   corresponding to the result of the widening operation on the even and odd
-   elements, these have the suffixes _EVEN and _ODD.
-   These five internal functions will require two optabs each, a SIGNED_OPTAB
-   and an UNSIGNED_OTPAB.
-
    Each entry must have a corresponding expander of the form:
 
      void expand_NAME (gimple_call stmt)

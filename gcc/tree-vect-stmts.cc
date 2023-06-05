@@ -5198,7 +5198,9 @@ vectorizable_conversion (vec_info *vinfo,
   else
     return false;
 
-  bool widen_arith = (code == WIDEN_MULT_EXPR
+  bool widen_arith = (code == WIDEN_PLUS_EXPR
+		 || code == WIDEN_MINUS_EXPR
+		 || code == WIDEN_MULT_EXPR
 		 || code == WIDEN_LSHIFT_EXPR
 		 || widening_fn_p (code));
 
@@ -5249,6 +5251,8 @@ vectorizable_conversion (vec_info *vinfo,
     {
       gcc_assert (code == WIDEN_MULT_EXPR
 		  || code == WIDEN_LSHIFT_EXPR
+		  || code == WIDEN_PLUS_EXPR
+		  || code == WIDEN_MINUS_EXPR
 		  || widening_fn_p (code));
 
       op1 = is_gimple_assign (stmt) ? gimple_assign_rhs2 (stmt) :
