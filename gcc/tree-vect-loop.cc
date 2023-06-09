@@ -3159,6 +3159,17 @@ start_over:
 	LOOP_VINFO_USING_SELECT_VL_P (loop_vinfo) = true;
     }
 
+  /* If we're vectorizing an epilogue loop, the vectorized loop either needs
+     to be able to handle fewer than VF scalars, or needs to have a lower VF
+     than the main loop.  */
+  if (LOOP_VINFO_EPILOGUE_P (loop_vinfo)
+      && !LOOP_VINFO_CAN_USE_PARTIAL_VECTORS_P (loop_vinfo)
+      && maybe_ge (LOOP_VINFO_VECT_FACTOR (loop_vinfo),
+		   LOOP_VINFO_VECT_FACTOR (orig_loop_vinfo)))
+    return opt_result::failure_at (vect_location,
+				   "Vectorization factor too high for"
+				   " epilogue loop.\n");
+
   /* Decide whether this loop_vinfo should use partial vectors or peeling,
      assuming that the loop will be used as a main loop.  We will redo
      this analysis later if we instead decide to use the loop as an

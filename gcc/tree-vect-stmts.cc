@@ -2926,8 +2926,11 @@ vect_get_loop_variant_data_ptr_increment (
   loop_vec_info loop_vinfo = dyn_cast<loop_vec_info> (vinfo);
   tree step = vect_dr_behavior (vinfo, dr_info)->step;
 
-  /* gather/scatter never reach here.  */
-  gcc_assert (memory_access_type != VMAT_GATHER_SCATTER);
+  /* TODO: We don't support gather/scatter or load_lanes/store_lanes for pointer
+     IVs are updated by variable amount but we will support them in the future.
+   */
+  gcc_assert (memory_access_type != VMAT_GATHER_SCATTER
+	      && memory_access_type != VMAT_LOAD_STORE_LANES);
 
   /* When we support SELECT_VL pattern, we dynamic adjust
      the memory address by .SELECT_VL result.
@@ -8847,6 +8850,40 @@ vectorizable_store (vec_info *vinfo,
 	      dataref_ptr = bump_vector_ptr (vinfo, dataref_ptr, ptr_incr, gsi,
 					     stmt_info, bump);
 	    }
+	  else if (STMT_VINFO_GATHER_SCATTER_P (stmt_info))
+	    vect_get_gather_scatter_ops (loop_vinfo, loop, stmt_info,
+					 slp_node, &gs_info, &dataref_ptr,
+					 &vec_offsets);
+	  else
+	    dataref_ptr
+	      = vect_create_data_ref_ptr (vinfo, first_stmt_info, aggr_type,
+					  simd_lane_access_p ? loop : NULL,
+					  offset, &dummy, gsi, &ptr_incr,
+					  simd_lane_access_p, bump);
+	}
+      else
+	{
+	  gcc_assert (!LOOP_VINFO_USING_SELECT_VL_P (loop_vinfo));  
+	  /* For interleaved stores we created vectorized defs for all the
+	     defs stored in OPRNDS in the previous iteration (previous copy).
+	     DR_CHAIN is then used as an input to vect_permute_store_chain().
+	     If the store is not grouped, DR_GROUP_SIZE is 1, and DR_CHAIN and
+	     OPRNDS are of size 1.  */
+	  for (i = 0; i < group_size; i++)
+	    {
+	      vec_oprnd = gvec_oprnds[i][j];
+	      dr_chain[i] = gvec_oprnds[i][j];
+	      oprnds[i] = gvec_oprnds[i][j];
+	    }
+	  if (mask)
+	    vec_mask = vec_masks[j];
+	  if (dataref_offset)
+	    dataref_offset
+	      = int_const_binop (PLUS_EXPR, dataref_offset, bump);
+	  else if (!STMT_VINFO_GATHER_SCATTER_P (stmt_info))
+	    dataref_ptr = bump_vector_ptr (vinfo, dataref_ptr, ptr_incr, gsi,
+					   stmt_info, bump);
+	}
 
 	  if (costing_p)
 	    {
