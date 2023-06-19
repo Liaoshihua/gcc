@@ -165,7 +165,7 @@ init_internal_fns ()
 #define mask_load_lanes_direct { -1, -1, false }
 #define gather_load_direct { 3, 1, false }
 #define len_load_direct { -1, -1, false }
-#define mask_len_load_direct { -1, 4, false }
+#define len_maskload_direct { -1, 3, false }
 #define mask_store_direct { 3, 2, false }
 #define store_lanes_direct { 0, 0, false }
 #define mask_store_lanes_direct { 0, 0, false }
@@ -174,7 +174,7 @@ init_internal_fns ()
 #define vec_cond_direct { 2, 0, false }
 #define scatter_store_direct { 3, 1, false }
 #define len_store_direct { 3, 3, false }
-#define mask_len_store_direct { 4, 5, false }
+#define len_maskstore_direct { 4, 3, false }
 #define vec_set_direct { 3, 3, false }
 #define vec_extract_direct { 0, -1, false }
 #define unary_direct { 0, 0, true }
@@ -2914,16 +2914,15 @@ expand_call_mem_ref (tree type, gcall *stmt, int index)
   return fold_build2 (MEM_REF, type, addr, build_int_cst (alias_ptr_type, 0));
 }
 
-/* Expand MASK_LOAD{,_LANES}, MASK_LEN_LOAD or LEN_LOAD call STMT using optab
+/* Expand MASK_LOAD{,_LANES}, LEN_MASK_LOAD or LEN_LOAD call STMT using optab
  * OPTAB.  */
 
 static void
 expand_partial_load_optab_fn (internal_fn ifn, gcall *stmt, convert_optab optab)
 {
-  int i = 0;
   class expand_operand ops[5];
-  tree type, lhs, rhs, maskt;
-  rtx mem, target;
+  tree type, lhs, rhs, maskt, biast;
+  rtx mem, target, mask, bias;
   insn_code icode;
 
   maskt = gimple_call_arg (stmt, internal_fn_mask_index (ifn));
@@ -2945,10 +2944,36 @@ expand_partial_load_optab_fn (internal_fn ifn, gcall *stmt, convert_optab optab)
   mem = expand_expr (rhs, NULL_RTX, VOIDmode, EXPAND_WRITE);
   gcc_assert (MEM_P (mem));
   target = expand_expr (lhs, NULL_RTX, VOIDmode, EXPAND_WRITE);
-  create_output_operand (&ops[i++], target, TYPE_MODE (type));
-  create_fixed_operand (&ops[i++], mem);
-  i = add_mask_and_len_args (ops, i, stmt);
-  expand_insn (icode, i, ops);
+  create_output_operand (&ops[0], target, TYPE_MODE (type));
+  create_fixed_operand (&ops[1], mem);
+  if (optab == len_load_optab)
+    {
+      create_convert_operand_from (&ops[2], mask, TYPE_MODE (TREE_TYPE (maskt)),
+				   TYPE_UNSIGNED (TREE_TYPE (maskt)));
+      biast = gimple_call_arg (stmt, 3);
+      bias = expand_normal (biast);
+      create_input_operand (&ops[3], bias, QImode);
+      expand_insn (icode, 4, ops);
+    }
+  else if (optab == len_maskload_optab)
+    {
+      create_convert_operand_from (&ops[2], mask, TYPE_MODE (TREE_TYPE (maskt)),
+				   TYPE_UNSIGNED (TREE_TYPE (maskt)));
+      maskt = gimple_call_arg (stmt, 3);
+      mask = expand_normal (maskt);
+      create_input_operand (&ops[3], mask, TYPE_MODE (TREE_TYPE (maskt)));
+      icode = convert_optab_handler (optab, TYPE_MODE (type),
+				     TYPE_MODE (TREE_TYPE (maskt)));
+      biast = gimple_call_arg (stmt, 4);
+      bias = expand_normal (biast);
+      create_input_operand (&ops[4], bias, QImode);
+      expand_insn (icode, 5, ops);
+    }
+  else
+    {
+      create_input_operand (&ops[2], mask, TYPE_MODE (TREE_TYPE (maskt)));
+      expand_insn (icode, 3, ops);
+    }
 
   if (!rtx_equal_p (target, ops[0].value))
     emit_move_insn (target, ops[0].value);
@@ -2957,18 +2982,17 @@ expand_partial_load_optab_fn (internal_fn ifn, gcall *stmt, convert_optab optab)
 #define expand_mask_load_optab_fn expand_partial_load_optab_fn
 #define expand_mask_load_lanes_optab_fn expand_mask_load_optab_fn
 #define expand_len_load_optab_fn expand_partial_load_optab_fn
-#define expand_mask_len_load_optab_fn expand_partial_load_optab_fn
+#define expand_len_maskload_optab_fn expand_partial_load_optab_fn
 
-/* Expand MASK_STORE{,_LANES}, MASK_LEN_STORE or LEN_STORE call STMT using optab
+/* Expand MASK_STORE{,_LANES}, LEN_MASK_STORE or LEN_STORE call STMT using optab
  * OPTAB.  */
 
 static void
 expand_partial_store_optab_fn (internal_fn ifn, gcall *stmt, convert_optab optab)
 {
-  int i = 0;
   class expand_operand ops[5];
-  tree type, lhs, rhs, maskt;
-  rtx mem, reg;
+  tree type, lhs, rhs, maskt, biast;
+  rtx mem, reg, mask, bias;
   insn_code icode;
 
   maskt = gimple_call_arg (stmt, internal_fn_mask_index (ifn));
@@ -2988,16 +3012,41 @@ expand_partial_store_optab_fn (internal_fn ifn, gcall *stmt, convert_optab optab
   mem = expand_expr (lhs, NULL_RTX, VOIDmode, EXPAND_WRITE);
   gcc_assert (MEM_P (mem));
   reg = expand_normal (rhs);
-  create_fixed_operand (&ops[i++], mem);
-  create_input_operand (&ops[i++], reg, TYPE_MODE (type));
-  i = add_mask_and_len_args (ops, i, stmt);
-  expand_insn (icode, i, ops);
+  create_fixed_operand (&ops[0], mem);
+  create_input_operand (&ops[1], reg, TYPE_MODE (type));
+  if (optab == len_store_optab)
+    {
+      create_convert_operand_from (&ops[2], mask, TYPE_MODE (TREE_TYPE (maskt)),
+				   TYPE_UNSIGNED (TREE_TYPE (maskt)));
+      biast = gimple_call_arg (stmt, 4);
+      bias = expand_normal (biast);
+      create_input_operand (&ops[3], bias, QImode);
+      expand_insn (icode, 4, ops);
+    }
+  else if (optab == len_maskstore_optab)
+    {
+      create_convert_operand_from (&ops[2], mask, TYPE_MODE (TREE_TYPE (maskt)),
+				   TYPE_UNSIGNED (TREE_TYPE (maskt)));
+      maskt = gimple_call_arg (stmt, 3);
+      mask = expand_normal (maskt);
+      create_input_operand (&ops[3], mask, TYPE_MODE (TREE_TYPE (maskt)));
+      biast = gimple_call_arg (stmt, 4);
+      bias = expand_normal (biast);
+      create_input_operand (&ops[4], bias, QImode);
+      icode = convert_optab_handler (optab, TYPE_MODE (type), GET_MODE (mask));
+      expand_insn (icode, 5, ops);
+    }
+  else
+    {
+      create_input_operand (&ops[2], mask, TYPE_MODE (TREE_TYPE (maskt)));
+      expand_insn (icode, 3, ops);
+    }
 }
 
 #define expand_mask_store_optab_fn expand_partial_store_optab_fn
 #define expand_mask_store_lanes_optab_fn expand_mask_store_optab_fn
 #define expand_len_store_optab_fn expand_partial_store_optab_fn
-#define expand_mask_len_store_optab_fn expand_partial_store_optab_fn
+#define expand_len_maskstore_optab_fn expand_partial_store_optab_fn
 
 /* Expand VCOND, VCONDU and VCONDEQ optab internal functions.
    The expansion of STMT happens based on OPTAB table associated.  */
@@ -3961,7 +4010,7 @@ multi_vector_optab_supported_p (convert_optab optab, tree_pair types,
 #define direct_mask_load_lanes_optab_supported_p multi_vector_optab_supported_p
 #define direct_gather_load_optab_supported_p convert_optab_supported_p
 #define direct_len_load_optab_supported_p direct_optab_supported_p
-#define direct_mask_len_load_optab_supported_p convert_optab_supported_p
+#define direct_len_maskload_optab_supported_p convert_optab_supported_p
 #define direct_mask_store_optab_supported_p convert_optab_supported_p
 #define direct_store_lanes_optab_supported_p multi_vector_optab_supported_p
 #define direct_mask_store_lanes_optab_supported_p multi_vector_optab_supported_p
@@ -3969,7 +4018,7 @@ multi_vector_optab_supported_p (convert_optab optab, tree_pair types,
 #define direct_vec_cond_optab_supported_p convert_optab_supported_p
 #define direct_scatter_store_optab_supported_p convert_optab_supported_p
 #define direct_len_store_optab_supported_p direct_optab_supported_p
-#define direct_mask_len_store_optab_supported_p convert_optab_supported_p
+#define direct_len_maskstore_optab_supported_p convert_optab_supported_p
 #define direct_while_optab_supported_p convert_optab_supported_p
 #define direct_fold_extract_optab_supported_p direct_optab_supported_p
 #define direct_fold_len_extract_optab_supported_p direct_optab_supported_p
