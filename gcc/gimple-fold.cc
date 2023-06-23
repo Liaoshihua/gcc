@@ -5370,10 +5370,10 @@ arith_overflowed_p (enum tree_code code, const_tree type,
   return wi::min_precision (wres, sign) > TYPE_PRECISION (type);
 }
 
-/* If IFN_{MASK,LEN}_LOAD/STORE call CALL is unconditional, return a MEM_REF
-   for the memory it references, otherwise return null.  VECTYPE is the
-   type of the memory vector.  MASK_P indicates it's for MASK if true,
-   otherwise it's for LEN.  */
+/* If IFN_{MASK,LEN,LEN_MASK}_LOAD/STORE call CALL is unconditional,
+   return a MEM_REF for the memory it references, otherwise return null.
+   VECTYPE is the type of the memory vector.  MASK_P indicates it's for
+   MASK if true, otherwise it's for LEN.  */
 
 static tree
 gimple_fold_partial_load_store_mem_ref (gcall *call, tree vectype, bool mask_p)
@@ -5450,7 +5450,8 @@ static bool
 gimple_fold_partial_store (gimple_stmt_iterator *gsi, gcall *call,
 			   bool mask_p)
 {
-  tree rhs = gimple_call_arg (call, 3);
+  internal_fn ifn = gimple_call_internal_fn (call);
+  tree rhs = gimple_call_arg (call, internal_fn_stored_value_index (ifn));
   if (tree lhs
       = gimple_fold_partial_load_store_mem_ref (call, TREE_TYPE (rhs), mask_p))
     {
@@ -5677,9 +5678,11 @@ gimple_fold_call (gimple_stmt_iterator *gsi, bool inplace)
 	  changed |= gimple_fold_partial_store (gsi, stmt, true);
 	  break;
 	case IFN_LEN_LOAD:
+	case IFN_LEN_MASK_LOAD:
 	  changed |= gimple_fold_partial_load (gsi, stmt, false);
 	  break;
 	case IFN_LEN_STORE:
+	case IFN_LEN_MASK_STORE:
 	  changed |= gimple_fold_partial_store (gsi, stmt, false);
 	  break;
 	default:
