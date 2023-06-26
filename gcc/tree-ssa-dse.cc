@@ -48,6 +48,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-ssa-loop-niter.h"
 #include "cfgloop.h"
 #include "tree-data-ref.h"
+#include "internal-fn.h"
 
 /* This file implements dead store elimination.
 
@@ -157,22 +158,15 @@ initialize_ao_ref_for_dse (gimple *stmt, ao_ref *write, bool may_def_ok = false)
       switch (gimple_call_internal_fn (stmt))
 	{
 	case IFN_LEN_STORE:
-	  ao_ref_init_from_ptr_and_size
-	      (write, gimple_call_arg (stmt, 0),
-	       int_const_binop (MINUS_EXPR,
-				gimple_call_arg (stmt, 2),
-				gimple_call_arg (stmt, 4)));
-	  return true;
 	case IFN_MASK_STORE:
 	case IFN_LEN_MASK_STORE:
 	  {
-	    internal_fn ifn = gimple_call_internal_fn (stmt);
-	    int stored_value_index = internal_fn_stored_value_index (ifn);
-	    int len_index = internal_fn_len_index (ifn);
-	    if (ifn == IFN_LEN_STORE)
+	    int stored_value_index
+	      = internal_fn_stored_value_index (gimple_call_internal_fn (stmt));
+	    if (gimple_call_internal_fn (stmt) == IFN_LEN_STORE)
 	      {
-		tree len = gimple_call_arg (stmt, len_index);
-		tree bias = gimple_call_arg (stmt, len_index + 1);
+		tree len = gimple_call_arg (stmt, 2);
+		tree bias = gimple_call_arg (stmt, 4);
 		if (tree_fits_uhwi_p (len))
 		  {
 		    ao_ref_init_from_ptr_and_size (write,
@@ -1503,6 +1497,7 @@ dse_optimize_stmt (function *fun, gimple_stmt_iterator *gsi, sbitmap live_bytes)
 	{
 	case IFN_LEN_STORE:
 	case IFN_MASK_STORE:
+	case IFN_LEN_MASK_STORE:
 	  {
 	    enum dse_store_status store_status;
 	    store_status = dse_classify_store (&ref, stmt, false, live_bytes);
