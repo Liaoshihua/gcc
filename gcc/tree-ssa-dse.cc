@@ -164,16 +164,36 @@ initialize_ao_ref_for_dse (gimple *stmt, ao_ref *write, bool may_def_ok = false)
 				gimple_call_arg (stmt, 4)));
 	  return true;
 	case IFN_MASK_STORE:
-	  /* We cannot initialize a must-def ao_ref (in all cases) but we
-	     can provide a may-def variant.  */
-	  if (may_def_ok)
-	    {
-	      ao_ref_init_from_ptr_and_size
-		  (write, gimple_call_arg (stmt, 0),
-		   TYPE_SIZE_UNIT (TREE_TYPE (gimple_call_arg (stmt, 3))));
-	      return true;
-	    }
-	  break;
+	case IFN_LEN_MASK_STORE:
+	  {
+	    internal_fn ifn = gimple_call_internal_fn (stmt);
+	    int stored_value_index = internal_fn_stored_value_index (ifn);
+	    int len_index = internal_fn_len_index (ifn);
+	    if (ifn == IFN_LEN_STORE)
+	      {
+		tree len = gimple_call_arg (stmt, len_index);
+		tree bias = gimple_call_arg (stmt, len_index + 1);
+		if (tree_fits_uhwi_p (len))
+		  {
+		    ao_ref_init_from_ptr_and_size (write,
+						   gimple_call_arg (stmt, 0),
+						   int_const_binop (MINUS_EXPR,
+								    len, bias));
+		    return true;
+		  }
+	      }
+	    /* We cannot initialize a must-def ao_ref (in all cases) but we
+	       can provide a may-def variant.  */
+	    if (may_def_ok)
+	      {
+		ao_ref_init_from_ptr_and_size (
+		  write, gimple_call_arg (stmt, 0),
+		  TYPE_SIZE_UNIT (
+		    TREE_TYPE (gimple_call_arg (stmt, stored_value_index))));
+		return true;
+	      }
+	    break;
+	  }
 	default:;
 	}
     }
