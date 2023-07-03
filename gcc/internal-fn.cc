@@ -3582,7 +3582,7 @@ expand_scatter_store_optab_fn (internal_fn, gcall *stmt, direct_optab optab)
   create_integer_operand (&ops[i++], TYPE_UNSIGNED (TREE_TYPE (offset)));
   create_integer_operand (&ops[i++], scale_int);
   create_input_operand (&ops[i++], rhs_rtx, TYPE_MODE (TREE_TYPE (rhs)));
-  i = add_mask_and_len_args (ops, i, stmt);
+  i = add_len_and_mask_args (ops, i, stmt);
 
   insn_code icode = convert_optab_handler (optab, TYPE_MODE (TREE_TYPE (rhs)),
 					   TYPE_MODE (TREE_TYPE (offset)));
@@ -3611,7 +3611,7 @@ expand_gather_load_optab_fn (internal_fn, gcall *stmt, direct_optab optab)
   create_input_operand (&ops[i++], offset_rtx, TYPE_MODE (TREE_TYPE (offset)));
   create_integer_operand (&ops[i++], TYPE_UNSIGNED (TREE_TYPE (offset)));
   create_integer_operand (&ops[i++], scale_int);
-  i = add_mask_and_len_args (ops, i, stmt);
+  i = add_len_and_mask_args (ops, i, stmt);
   insn_code icode = convert_optab_handler (optab, TYPE_MODE (TREE_TYPE (lhs)),
 					   TYPE_MODE (TREE_TYPE (offset)));
   expand_insn (icode, i, ops);
@@ -4592,7 +4592,7 @@ internal_load_fn_p (internal_fn fn)
     case IFN_MASK_LEN_LOAD_LANES:
     case IFN_GATHER_LOAD:
     case IFN_MASK_GATHER_LOAD:
-    case IFN_MASK_LEN_GATHER_LOAD:
+    case IFN_LEN_MASK_GATHER_LOAD:
     case IFN_LEN_LOAD:
     case IFN_MASK_LEN_LOAD:
       return true;
@@ -4615,7 +4615,7 @@ internal_store_fn_p (internal_fn fn)
     case IFN_MASK_LEN_STORE_LANES:
     case IFN_SCATTER_STORE:
     case IFN_MASK_SCATTER_STORE:
-    case IFN_MASK_LEN_SCATTER_STORE:
+    case IFN_LEN_MASK_SCATTER_STORE:
     case IFN_LEN_STORE:
     case IFN_MASK_LEN_STORE:
       return true;
@@ -4634,10 +4634,10 @@ internal_gather_scatter_fn_p (internal_fn fn)
     {
     case IFN_GATHER_LOAD:
     case IFN_MASK_GATHER_LOAD:
-    case IFN_MASK_LEN_GATHER_LOAD:
+    case IFN_LEN_MASK_GATHER_LOAD:
     case IFN_SCATTER_STORE:
     case IFN_MASK_SCATTER_STORE:
-    case IFN_MASK_LEN_SCATTER_STORE:
+    case IFN_LEN_MASK_SCATTER_STORE:
       return true;
 
     default:
@@ -4657,38 +4657,9 @@ internal_fn_len_index (internal_fn fn)
     case IFN_LEN_STORE:
       return 2;
 
-    case IFN_MASK_LEN_GATHER_LOAD:
-    case IFN_MASK_LEN_SCATTER_STORE:
-    case IFN_COND_LEN_FMA:
-    case IFN_COND_LEN_FMS:
-    case IFN_COND_LEN_FNMA:
-    case IFN_COND_LEN_FNMS:
-      return 5;
-
-    case IFN_COND_LEN_ADD:
-    case IFN_COND_LEN_SUB:
-    case IFN_COND_LEN_MUL:
-    case IFN_COND_LEN_DIV:
-    case IFN_COND_LEN_MOD:
-    case IFN_COND_LEN_RDIV:
-    case IFN_COND_LEN_MIN:
-    case IFN_COND_LEN_MAX:
-    case IFN_COND_LEN_FMIN:
-    case IFN_COND_LEN_FMAX:
-    case IFN_COND_LEN_AND:
-    case IFN_COND_LEN_IOR:
-    case IFN_COND_LEN_XOR:
-    case IFN_COND_LEN_SHL:
-    case IFN_COND_LEN_SHR:
+    case IFN_LEN_MASK_GATHER_LOAD:
+    case IFN_LEN_MASK_SCATTER_STORE:
       return 4;
-
-    case IFN_COND_LEN_NEG:
-    case IFN_MASK_LEN_LOAD:
-    case IFN_MASK_LEN_STORE:
-    case IFN_MASK_LEN_LOAD_LANES:
-    case IFN_MASK_LEN_STORE_LANES:
-    case IFN_VCOND_MASK_LEN:
-      return 3;
 
     default:
       return -1;
@@ -4780,8 +4751,9 @@ internal_fn_mask_index (internal_fn fn)
     case IFN_MASK_LEN_SCATTER_STORE:
       return 4;
 
-    case IFN_VCOND_MASK_LEN:
-      return 0;
+    case IFN_LEN_MASK_GATHER_LOAD:
+    case IFN_LEN_MASK_SCATTER_STORE:
+      return 6;
 
     default:
       return (conditional_internal_fn_code (fn) != ERROR_MARK
@@ -4801,7 +4773,7 @@ internal_fn_stored_value_index (internal_fn fn)
     case IFN_MASK_STORE_LANES:
     case IFN_SCATTER_STORE:
     case IFN_MASK_SCATTER_STORE:
-    case IFN_MASK_LEN_SCATTER_STORE:
+    case IFN_LEN_MASK_SCATTER_STORE:
       return 3;
 
     case IFN_LEN_STORE:
