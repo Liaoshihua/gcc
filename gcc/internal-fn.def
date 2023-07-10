@@ -278,8 +278,6 @@ DEF_INTERNAL_OPTAB_FN (COND_LEN_FNMS, ECF_CONST, cond_len_fnms,
 		       cond_len_ternary)
 
 DEF_INTERNAL_OPTAB_FN (COND_LEN_NEG, ECF_CONST, cond_len_neg, cond_len_unary)
-DEF_INTERNAL_COND_FN (NEG, ECF_CONST, neg, unary)
-DEF_INTERNAL_COND_FN (NOT, ECF_CONST, one_cmpl, unary)
 
 DEF_INTERNAL_OPTAB_FN (RSQRT, ECF_CONST, rsqrt, unary)
 
