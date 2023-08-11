@@ -50,6 +50,7 @@ along with GCC; see the file COPYING3.  If not see
    - mask_load: currently just maskload
    - load_lanes: currently just vec_load_lanes
    - mask_load_lanes: currently just vec_mask_load_lanes
+   - mask_len_load_lanes: currently just vec_mask_len_load_lanes
    - gather_load: used for {mask_,mask_len_,}gather_load
    - len_load: currently just len_load
    - mask_len_load: currently just mask_len_load
@@ -57,6 +58,7 @@ along with GCC; see the file COPYING3.  If not see
    - mask_store: currently just maskstore
    - store_lanes: currently just vec_store_lanes
    - mask_store_lanes: currently just vec_mask_store_lanes
+   - mask_len_store_lanes: currently just vec_mask_len_store_lanes
    - scatter_store: used for {mask_,mask_len_,}scatter_store
    - len_store: currently just len_store
    - mask_len_store: currently just mask_len_store
