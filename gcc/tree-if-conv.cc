@@ -1819,12 +1819,15 @@ is_cond_scalar_reduction (gimple *phi, gimple **reduc, tree arg_0, tree arg_1,
     res_2 = res_13 + _ifc__1;
   Argument SWAP tells that arguments of conditional expression should be
   swapped.
+  If LOOP_VERSIONED is true if we assume that we versioned the loop for
+  vectorization.  In that case we can create a COND_OP.
   Returns rhs of resulting PHI assignment.  */
 
 static tree
 convert_scalar_cond_reduction (gimple *reduc, gimple_stmt_iterator *gsi,
 			       tree cond, tree op0, tree op1, bool swap,
-			       bool has_nop, gimple* nop_reduc)
+			       bool has_nop, gimple* nop_reduc,
+			       bool loop_versioned)
 {
   gimple_stmt_iterator stmt_it;
   gimple *new_assign;
@@ -1848,7 +1851,7 @@ convert_scalar_cond_reduction (gimple *reduc, gimple_stmt_iterator *gsi,
      The COND_OP will have a neutral_op else value.  */
   internal_fn ifn;
   ifn = get_conditional_internal_fn (reduction_op);
-  if (ifn != IFN_LAST
+  if (loop_versioned && ifn != IFN_LAST
       && vectorized_internal_fn_supported_p (ifn, TREE_TYPE (lhs))
       && !swap)
     {
@@ -1951,11 +1954,13 @@ gen_phi_arg_condition (gphi *phi, vec<int> *occur,
    The generated code is inserted at GSI that points to the top of
    basic block's statement list.
    If PHI node has more than two arguments a chain of conditional
-   expression is produced.  */
+   expression is produced.
+   LOOP_VERSIONED should be true if we know that the loop was versioned for
+   vectorization. */
 
 
 static void
-predicate_scalar_phi (gphi *phi, gimple_stmt_iterator *gsi)
+predicate_scalar_phi (gphi *phi, gimple_stmt_iterator *gsi, bool loop_versioned)
 {
   gimple *new_stmt = NULL, *reduc, *nop_reduc;
   tree rhs, res, arg0, arg1, op0, op1, scev;
@@ -2031,7 +2036,8 @@ predicate_scalar_phi (gphi *phi, gimple_stmt_iterator *gsi)
 	  /* Convert reduction stmt into vectorizable form.  */
 	  rhs = convert_scalar_cond_reduction (reduc, gsi, cond, op0, op1,
 					       true_bb != gimple_bb (reduc),
-					       has_nop, nop_reduc);
+					       has_nop, nop_reduc,
+					       loop_versioned);
 	  redundant_ssa_names.safe_push (std::make_pair (res, rhs));
 	}
       else
@@ -2122,7 +2128,8 @@ predicate_scalar_phi (gphi *phi, gimple_stmt_iterator *gsi)
 	{
 	  /* Convert reduction stmt into vectorizable form.  */
 	  rhs = convert_scalar_cond_reduction (reduc, gsi, cond, op0, op1,
-					       swap, has_nop, nop_reduc);
+					       swap, has_nop, nop_reduc,
+					       loop_versioned);
 	  redundant_ssa_names.safe_push (std::make_pair (res, rhs));
 	}
       new_stmt = gimple_build_assign (res, rhs);
@@ -2167,10 +2174,12 @@ predicate_scalar_phi (gphi *phi, gimple_stmt_iterator *gsi)
 }
 
 /* Replaces in LOOP all the scalar phi nodes other than those in the
-   LOOP->header block with conditional modify expressions.  */
+   LOOP->header block with conditional modify expressions.
+   LOOP_VERSIONED should be true if we know that the loop was versioned for
+   vectorization. */
 
 static void
-predicate_all_scalar_phis (class loop *loop)
+predicate_all_scalar_phis (class loop *loop, bool loop_versioned)
 {
   basic_block bb;
   unsigned int orig_loop_num_nodes = loop->num_nodes;
@@ -2198,7 +2207,7 @@ predicate_all_scalar_phis (class loop *loop)
 	    gsi_next (&phi_gsi);
 	  else
 	    {
-	      predicate_scalar_phi (phi, &gsi);
+	      predicate_scalar_phi (phi, &gsi, loop_versioned);
 	      remove_phi_node (&phi_gsi, false);
 	    }
 	}
@@ -2737,10 +2746,12 @@ remove_conditions_and_labels (loop_p loop)
 }
 
 /* Combine all the basic blocks from LOOP into one or two super basic
-   blocks.  Replace PHI nodes with conditional modify expressions.  */
+   blocks.  Replace PHI nodes with conditional modify expressions.
+   LOOP_VERSIONED should be true if we know that the loop was versioned for
+   vectorization. */
 
 static void
-combine_blocks (class loop *loop)
+combine_blocks (class loop *loop, bool loop_versioned)
 {
   basic_block bb, exit_bb, merge_target_bb;
   unsigned int orig_loop_num_nodes = loop->num_nodes;
@@ -2750,7 +2761,7 @@ combine_blocks (class loop *loop)
 
   remove_conditions_and_labels (loop);
   insert_gimplified_predicates (loop);
-  predicate_all_scalar_phis (loop);
+  predicate_all_scalar_phis (loop, loop_versioned);
 
   if (need_to_predicate || need_to_rewrite_undefined)
     predicate_statements (loop);
@@ -3569,6 +3580,7 @@ tree_if_conversion (class loop *loop, vec<gimple *> *preds)
   bitmap exit_bbs;
   edge pe;
   auto_vec<data_reference_p, 10> refs;
+  bool loop_versioned;
 
  again:
   rloop = NULL;
@@ -3578,6 +3590,7 @@ tree_if_conversion (class loop *loop, vec<gimple *> *preds)
   need_to_predicate = false;
   need_to_rewrite_undefined = false;
   any_complicated_phi = false;
+  loop_versioned = false;
 
   /* Apply more aggressive if-conversion when loop or its outer loop were
      marked with simd pragma.  When that's the case, we try to if-convert
@@ -3678,6 +3691,8 @@ tree_if_conversion (class loop *loop, vec<gimple *> *preds)
 	   will re-use that for things like runtime alias versioning
 	   whose condition can end up using those invariants.  */
 	pe = single_pred_edge (gimple_bb (preds->last ()));
+
+      loop_versioned = true;
     }
 
   if (need_to_lower_bitfields)
@@ -3710,7 +3725,7 @@ tree_if_conversion (class loop *loop, vec<gimple *> *preds)
       /* Now all statements are if-convertible.  Combine all the basic
 	 blocks into one huge basic block doing the if-conversion
 	 on-the-fly.  */
-      combine_blocks (loop);
+      combine_blocks (loop, loop_versioned);
     }
 
   /* Perform local CSE, this esp. helps the vectorizer analysis if loads
