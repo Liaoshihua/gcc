@@ -4318,6 +4318,7 @@ set_edom_supported_p (void)
   {							\
     expand_##TYPE##_optab_fn (fn, stmt, OPTAB##_optab);	\
   }
+#define DEF_INTERNAL_INT_EXT_FN(CODE, FLAGS, OPTAB, TYPE)
 #define DEF_INTERNAL_SIGNED_OPTAB_FN(CODE, FLAGS, SELECTOR, SIGNED_OPTAB, \
 				     UNSIGNED_OPTAB, TYPE)		\
   static void								\
@@ -5031,4 +5032,169 @@ expand_MASK_CALL (internal_fn, gcall *)
 {
   /* This IFN should only exist between ifcvt and vect passes.  */
   gcc_unreachable ();
+}
+
+void
+expand_MULBITINT (internal_fn, gcall *stmt)
+{
+  rtx_mode_t args[6];
+  for (int i = 0; i < 6; i++)
+    args[i] = rtx_mode_t (expand_normal (gimple_call_arg (stmt, i)),
+			  (i & 1) ? SImode : ptr_mode);
+  rtx fun = init_one_libfunc ("__mulbitint3");
+  emit_library_call_value_1 (0, fun, NULL_RTX, LCT_NORMAL, VOIDmode, 6, args);
+}
+
+void
+expand_DIVMODBITINT (internal_fn, gcall *stmt)
+{
+  rtx_mode_t args[8];
+  for (int i = 0; i < 8; i++)
+    args[i] = rtx_mode_t (expand_normal (gimple_call_arg (stmt, i)),
+			  (i & 1) ? SImode : ptr_mode);
+  rtx fun = init_one_libfunc ("__divmodbitint4");
+  emit_library_call_value_1 (0, fun, NULL_RTX, LCT_NORMAL, VOIDmode, 8, args);
+}
+
+void
+expand_FLOATTOBITINT (internal_fn, gcall *stmt)
+{
+  machine_mode mode = TYPE_MODE (TREE_TYPE (gimple_call_arg (stmt, 2)));
+  rtx arg0 = expand_normal (gimple_call_arg (stmt, 0));
+  rtx arg1 = expand_normal (gimple_call_arg (stmt, 1));
+  rtx arg2 = expand_normal (gimple_call_arg (stmt, 2));
+  const char *mname = GET_MODE_NAME (mode);
+  unsigned mname_len = strlen (mname);
+  int len = 12 + mname_len;
+  if (DECIMAL_FLOAT_MODE_P (mode))
+    len += 4;
+  char *libfunc_name = XALLOCAVEC (char, len);
+  char *p = libfunc_name;
+  const char *q;
+  if (DECIMAL_FLOAT_MODE_P (mode))
+    {
+#if ENABLE_DECIMAL_BID_FORMAT
+      memcpy (p, "__bid_fix", 9);
+#else
+      memcpy (p, "__dpd_fix", 9);
+#endif
+      p += 9;
+    }
+  else
+    {
+      memcpy (p, "__fix", 5);
+      p += 5;
+    }
+  for (q = mname; *q; q++)
+    *p++ = TOLOWER (*q);
+  memcpy (p, "bitint", 7);
+  rtx fun = init_one_libfunc (libfunc_name);
+  emit_library_call (fun, LCT_NORMAL, VOIDmode, arg0, ptr_mode, arg1,
+		     SImode, arg2, mode);
+}
+
+void
+expand_BITINTTOFLOAT (internal_fn, gcall *stmt)
+{
+  tree lhs = gimple_call_lhs (stmt);
+  if (!lhs)
+    return;
+  machine_mode mode = TYPE_MODE (TREE_TYPE (lhs));
+  rtx arg0 = expand_normal (gimple_call_arg (stmt, 0));
+  rtx arg1 = expand_normal (gimple_call_arg (stmt, 1));
+  const char *mname = GET_MODE_NAME (mode);
+  unsigned mname_len = strlen (mname);
+  int len = 14 + mname_len;
+  if (DECIMAL_FLOAT_MODE_P (mode))
+    len += 4;
+  char *libfunc_name = XALLOCAVEC (char, len);
+  char *p = libfunc_name;
+  const char *q;
+  if (DECIMAL_FLOAT_MODE_P (mode))
+    {
+#if ENABLE_DECIMAL_BID_FORMAT
+      memcpy (p, "__bid_floatbitint", 17);
+#else
+      memcpy (p, "__dpd_floatbitint", 17);
+#endif
+      p += 17;
+    }
+  else
+    {
+      memcpy (p, "__floatbitint", 13);
+      p += 13;
+    }
+  for (q = mname; *q; q++)
+    *p++ = TOLOWER (*q);
+  *p = '\0';
+  rtx fun = init_one_libfunc (libfunc_name);
+  rtx target = expand_expr (lhs, NULL_RTX, VOIDmode, EXPAND_WRITE);
+  rtx val = emit_library_call_value (fun, target, LCT_PURE, mode,
+				     arg0, ptr_mode, arg1, SImode);
+  if (val != target)
+    emit_move_insn (target, val);
+}
+
+void
+expand_POPCOUNT (internal_fn fn, gcall *stmt)
+{
+  if (gimple_call_num_args (stmt) == 1)
+    {
+      expand_unary_optab_fn (fn, stmt, popcount_optab);
+      return;
+    }
+  /* If .POPCOUNT call has 2 arguments, match_single_bit_test marked it
+     because the result is only used in an equality comparison against 1.
+     Use rtx costs in that case to determine if .POPCOUNT (arg) == 1
+     or (arg ^ (arg - 1)) > arg - 1 is cheaper.  */
+  bool speed_p = optimize_insn_for_speed_p ();
+  tree lhs = gimple_call_lhs (stmt);
+  tree arg = gimple_call_arg (stmt, 0);
+  tree type = TREE_TYPE (arg);
+  machine_mode mode = TYPE_MODE (type);
+  do_pending_stack_adjust ();
+  start_sequence ();
+  expand_unary_optab_fn (fn, stmt, popcount_optab);
+  rtx_insn *popcount_insns = get_insns ();
+  end_sequence ();
+  start_sequence ();
+  rtx plhs = expand_normal (lhs);
+  rtx pcmp = emit_store_flag (NULL_RTX, EQ, plhs, const1_rtx, mode, 0, 0);
+  if (pcmp == NULL_RTX)
+    {
+    fail:
+      end_sequence ();
+      emit_insn (popcount_insns);
+      return;
+    }
+  rtx_insn *popcount_cmp_insns = get_insns ();
+  end_sequence ();
+  start_sequence ();
+  rtx op0 = expand_normal (arg);
+  rtx argm1 = expand_simple_binop (mode, PLUS, op0, constm1_rtx, NULL_RTX,
+				   1, OPTAB_DIRECT);
+  if (argm1 == NULL_RTX)
+    goto fail;
+  rtx argxorargm1 = expand_simple_binop (mode, XOR, op0, argm1, NULL_RTX,
+					 1, OPTAB_DIRECT);
+  if (argxorargm1 == NULL_RTX)
+    goto fail;
+  rtx cmp = emit_store_flag (NULL_RTX, GTU, argxorargm1, argm1, mode, 1, 1);
+  if (cmp == NULL_RTX)
+    goto fail;
+  rtx_insn *cmp_insns = get_insns ();
+  end_sequence ();
+  unsigned popcount_cost = (seq_cost (popcount_insns, speed_p)
+			    + seq_cost (popcount_cmp_insns, speed_p));
+  unsigned cmp_cost = seq_cost (cmp_insns, speed_p);
+  if (popcount_cost <= cmp_cost)
+    emit_insn (popcount_insns);
+  else
+    {
+      emit_insn (cmp_insns);
+      plhs = expand_normal (lhs);
+      if (GET_MODE (cmp) != GET_MODE (plhs))
+	cmp = convert_to_mode (GET_MODE (plhs), cmp, 1);
+      emit_move_insn (plhs, cmp);
+    }
 }
