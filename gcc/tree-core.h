@@ -1382,6 +1382,9 @@ struct GTY(()) tree_base {
        DECL_NONALIASED in
 	  VAR_DECL
 
+       CHREC_NOWRAP in
+	  POLYNOMIAL_CHREC
+
    deprecated_flag:
 
        TREE_DEPRECATED in
