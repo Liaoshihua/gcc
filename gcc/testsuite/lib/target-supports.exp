@@ -11178,12 +11178,11 @@ proc check_vect_support_and_set_flags { } {
         set dg-do-what-default run
     } elseif [istarget riscv64-*-*] {
 	if [check_effective_target_riscv_v] {
-	    lappend DEFAULT_VECTCFLAGS "--param" "riscv-vector-abi"
 	    set dg-do-what-default run
 	} else {
-	    lappend DEFAULT_VECTCFLAGS "-march=rv64gcv_zvfh" "-mabi=lp64d"
-	    lappend DEFAULT_VECTCFLAGS "--param" "riscv-autovec-preference=scalable"
-	    lappend DEFAULT_VECTCFLAGS "--param" "riscv-vector-abi"
+	    foreach item [add_options_for_riscv_v ""] {
+		lappend DEFAULT_VECTCFLAGS $item
+	    }
 	    set dg-do-what-default compile
 	}
     } elseif [istarget loongarch*-*-*] {
